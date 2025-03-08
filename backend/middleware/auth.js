@@ -1,24 +1,43 @@
 import jwt from 'jsonwebtoken'
 
-const authUser = async (req, res, next) => {
-
-    const { token } = req.headers;
-
-    if (!token) {
-        return res.json({ success: false, message: 'Not Authorized Login Again' })
-    }
-
+export const isAuthenticated = async (req, res, next) => {
     try {
+        const token = req.headers.token;
 
-        const token_decode = jwt.verify(token, process.env.JWT_SECRET)
-        req.body.userId = token_decode.id
-        next()
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: 'Please login to access this resource'
+            });
+        }
 
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        res.status(401).json({
+            success: false,
+            message: 'Invalid or expired token'
+        });
     }
+};
 
-}
+export const isSeller = (req, res, next) => {
+    if (req.user.role !== 'seller') {
+        return res.status(403).json({
+            success: false,
+            message: 'Only sellers can access this resource'
+        });
+    }
+    next();
+};
 
-export default authUser
+export const isAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({
+            success: false,
+            message: 'Only admins can access this resource'
+        });
+    }
+    next();
+};

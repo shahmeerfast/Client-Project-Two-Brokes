@@ -1,14 +1,36 @@
 import express from 'express'
-import { listProducts, addProduct, removeProduct, singleProduct,updateProduct } from '../controllers/productController.js'
-import upload from '../middleware/multer.js';
-import adminAuth from '../middleware/adminAuth.js';
+import { listProducts, addProduct, removeProduct, singleProduct,updateProduct, getProducts, getPendingProducts, updateProductStatus, getSellerProducts, updateSellerProduct, deleteSellerProduct } from '../controllers/productController.js'
+import multer from 'multer'
+import { isAuthenticated, isAdmin, isSeller } from '../middleware/auth.js'
 
-const productRouter = express.Router();
+const router = express.Router()
 
-productRouter.post('/add',adminAuth,upload.fields([{name:'image1',maxCount:1},{name:'image2',maxCount:1},{name:'image3',maxCount:1},{name:'image4',maxCount:1}]),addProduct);
-productRouter.post('/remove',adminAuth,removeProduct);
-productRouter.post('/single',singleProduct);
-productRouter.get('/list',listProducts)
-productRouter.put('/update', adminAuth, upload.fields([{name:'image1', maxCount:1}, {name:'image2', maxCount:1}, {name:'image3', maxCount:1}, {name:'image4', maxCount:1}]), updateProduct);
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/')
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, file.fieldname + '-' + uniqueSuffix + '.' + file.originalname.split('.').pop())
+  }
+})
 
-export default productRouter
+const upload = multer({ storage: storage })
+
+// Public routes
+router.get('/list', getProducts) // Get all approved products
+router.get('/product/:id', singleProduct) // Get single product details
+
+// Seller routes
+router.get('/seller/products', isAuthenticated, isSeller, getSellerProducts)
+router.put('/seller/update/:productId', isAuthenticated, isSeller, upload.array('images', 4), updateSellerProduct)
+router.delete('/seller/delete/:productId', isAuthenticated, isSeller, deleteSellerProduct)
+router.post('/seller/add', isAuthenticated, isSeller, upload.array('images', 4), addProduct)
+
+// Admin routes
+router.get('/admin/pending', isAuthenticated, isAdmin, getPendingProducts)
+router.put('/admin/product/:productId/status', isAuthenticated, isAdmin, updateProductStatus)
+router.delete('/admin/product/:productId', isAuthenticated, isAdmin, removeProduct)
+
+export default router

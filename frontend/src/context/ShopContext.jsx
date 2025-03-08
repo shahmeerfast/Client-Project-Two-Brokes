@@ -197,23 +197,40 @@ export const ShopContextProvider = ({ children }) => {
     }
 
     // Product functions
-    const addProduct = async (productData) => {
+    const addProduct = async (formData) => {
         try {
-            const newProduct = {
-                _id: Date.now().toString(),
-                ...productData,
-                createdAt: new Date().toISOString()
-            };
-            
-            // Store products in localStorage to persist data
-            const updatedProducts = [...userProducts, newProduct];
-            setUserProducts(updatedProducts);
-            localStorage.setItem('userProducts', JSON.stringify(updatedProducts));
-            
-            return newProduct;
+            if (!token) {
+                throw new Error('Please login to add a product');
+            }
+
+            console.log('Adding product with token:', token);
+            const response = await axios.post(
+                `${backendUrl}/api/product/seller/add`,
+                formData,
+                {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'token': token
+                    }
+                }
+            );
+
+            console.log('Add product response:', response.data);
+
+            if (response.data.success) {
+                const newProduct = response.data.product;
+                setUserProducts(prev => [...prev, newProduct]);
+                return newProduct;
+            } else {
+                throw new Error(response.data.message || 'Failed to add product');
+            }
         } catch (error) {
-            console.error('Error adding product:', error);
-            throw error;
+            console.error('Error in addProduct:', error.response || error);
+            throw new Error(
+                error.response?.data?.message || 
+                error.message || 
+                'Failed to add product. Please try again.'
+            );
         }
     };
 

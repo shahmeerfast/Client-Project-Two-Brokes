@@ -1,50 +1,100 @@
 import { v2 as cloudinary } from "cloudinary"
 import productModel from "../models/productModel.js"
+import Product from '../models/Product.js';
 
 // function for add product
 const addProduct = async (req, res) => {
     try {
+        console.log('=== ADD PRODUCT DEBUG ===');
+        console.log('Request body:', req.body);
+        console.log('Files received:', req.files);
+        console.log('User from token:', req.user);
 
-        const { name, description, price, category, subCategory, sizes, bestseller } = req.body
+        const { name, description, price, category, condition, subCategory, sizes, bestseller } = req.body;
 
-        const image1 = req.files.image1 && req.files.image1[0]
-        const image2 = req.files.image2 && req.files.image2[0]
-        const image3 = req.files.image3 && req.files.image3[0]
-        const image4 = req.files.image4 && req.files.image4[0]
+        // Validate required fields
+        if (!name || !description || !price || !category) {
+            return res.status(400).json({
+                success: false,
+                message: "Name, description, price, and category are required"
+            });
+        }
 
-        const images = [image1, image2, image3, image4].filter((item) => item !== undefined)
+        let imagesUrl = [];
+        
+        // Handle image uploads
+        if (req.files && req.files.length > 0) {
+            try {
+                imagesUrl = await Promise.all(
+                    req.files.map(async (file) => {
+                        console.log('Processing file:', file.originalname);
+                        console.log('File path:', file.path);
+                        
+                        const result = await cloudinary.uploader.upload(file.path, {
+                            resource_type: 'image',
+                            folder: 'products'
+                        });
+                        console.log('Cloudinary result:', result);
+                        
+                        if (!result || !result.secure_url) {
+                            throw new Error('Failed to get secure URL from Cloudinary');
+                        }
+                        
+                        return result.secure_url;
+                    })
+                );
+                console.log('Uploaded image URLs:', imagesUrl);
+            } catch (error) {
+                console.error('Error uploading images:', error);
+                return res.status(500).json({
+                    success: false,
+                    message: "Error uploading images: " + error.message
+                });
+            }
+        }
 
-        let imagesUrl = await Promise.all(
-            images.map(async (item) => {
-                let result = await cloudinary.uploader.upload(item.path, { resource_type: 'image' });
-                return result.secure_url
-            })
-        )
+        // Use a default image if no images were uploaded or if upload failed
+        if (imagesUrl.length === 0) {
+            imagesUrl = ['https://via.placeholder.com/300x200?text=No+Image'];
+        }
 
         const productData = {
             name,
             description,
             category,
             price: Number(price),
-            subCategory,
-            bestseller: bestseller === "true" ? true : false,
-            sizes: JSON.parse(sizes),
-            image: imagesUrl,
-            date: Date.now()
-        }
+            condition: condition || 'new',
+            subCategory: subCategory || category,
+            bestseller: bestseller === "true",
+            sizes: sizes ? JSON.parse(sizes) : ['S', 'M', 'L'],
+            images: imagesUrl,
+            seller: req.user.id,
+            approvalStatus: 'pending',
+            createdAt: new Date()
+        };
 
-        console.log(productData);
+        console.log('Creating product with data:', productData);
 
-        const product = new productModel(productData);
-        await product.save()
+        const product = new Product(productData);
+        await product.save();
 
-        res.json({ success: true, message: "Product Added" })
+        console.log('Product saved successfully:', product);
+        console.log('=== END ADD PRODUCT DEBUG ===');
+
+        res.status(201).json({
+            success: true,
+            message: "Product Added Successfully",
+            product
+        });
 
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        console.error('Error in addProduct:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Error adding product"
+        });
     }
-}
+};
 
 // function for list product
 const listProducts = async (req, res) => {
@@ -118,4 +168,211 @@ const updateProduct = async (req, res) => {
   
   
 
-export { listProducts, addProduct, removeProduct, singleProduct,updateProduct }
+// Get all products (only approved ones for public view)
+const getProducts = async (req, res) => {
+  try {
+    const products = await Product.find({ approvalStatus: 'approved' })
+      .populate('seller', 'fullName')
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      products
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching products',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get pending products (for admin)
+const getPendingProducts = async (req, res) => {
+  try {
+    const products = await Product.find({ approvalStatus: 'pending' })
+      .populate('seller', 'fullName email')
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      products
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending products',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Approve or reject product (requires admin authentication)
+const updateProductStatus = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { status, rejectionReason } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status'
+      });
+    }
+
+    const product = await Product.findById(productId);
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+
+    product.approvalStatus = status;
+    product.approvedBy = req.user.id; // From auth middleware
+    product.approvalDate = new Date();
+    
+    if (status === 'rejected' && rejectionReason) {
+      product.rejectionReason = rejectionReason;
+    }
+
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Product ${status} successfully`,
+      product
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating product status',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get seller's products (including pending and rejected)
+const getSellerProducts = async (req, res) => {
+  try {
+    console.log('=== GET SELLER PRODUCTS DEBUG ===');
+    console.log('User from token:', req.user);
+    console.log('Token:', req.headers.token);
+    console.log('Searching for products with seller ID:', req.user.id);
+    
+    const products = await Product.find({ seller: req.user.id })
+      .populate('seller', 'fullName email')
+      .sort({ createdAt: -1 });
+    
+    console.log('Found seller products:', products);
+    console.log('=== END DEBUG ===');
+    
+    res.status(200).json({
+      success: true,
+      products
+    });
+  } catch (error) {
+    console.error('Error in getSellerProducts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching seller products',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Update seller's product
+const updateSellerProduct = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { name, description, price, condition } = req.body;
+    
+    const product = await Product.findOne({ _id: productId, seller: req.user.id });
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found or you do not have permission to update it'
+      });
+    }
+
+    // Update basic fields
+    product.name = name || product.name;
+    product.description = description || product.description;
+    product.price = price || product.price;
+    product.condition = condition || product.condition;
+
+    // Update images if new ones are uploaded
+    if (req.files && req.files.length > 0) {
+      // Ensure image paths are properly formatted
+      product.images = req.files.map(file => {
+        const path = file.path.replace(/\\/g, '/');
+        return path.startsWith('/') ? path : `/${path}`;
+      });
+    }
+
+    // Set status back to pending if product was previously approved
+    if (product.approvalStatus === 'approved') {
+      product.approvalStatus = 'pending';
+    }
+
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Product updated successfully',
+      product
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating product',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Delete seller's product
+const deleteSellerProduct = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    
+    const product = await Product.findOne({ _id: productId, seller: req.user.id });
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found or you do not have permission to delete it'
+      });
+    }
+
+    await Product.deleteOne({ _id: productId });
+
+    res.status(200).json({
+      success: true,
+      message: 'Product deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting product',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+export {
+    listProducts,
+    addProduct,
+    removeProduct,
+    singleProduct,
+    updateProduct,
+    getProducts,
+    getPendingProducts,
+    updateProductStatus,
+    getSellerProducts,
+    updateSellerProduct,
+    deleteSellerProduct
+}
