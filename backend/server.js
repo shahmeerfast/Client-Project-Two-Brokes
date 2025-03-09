@@ -10,6 +10,7 @@ import orderRouter from './routes/orderRoute.js'
 import router from './routes/chartRoute.js'
 import authRoute from './routes/authRoute.js'
 import sellerRoute from './routes/sellerRoute.js'
+import testRoute from './test-route.js'
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
@@ -46,6 +47,7 @@ app.use(cors())
 app.use('/uploads', express.static('uploads'))
 
 // api endpoints
+app.use('/api/test', testRoute)
 app.use('/api/auth', authRoute)
 app.use('/api/user', userRouter)
 app.use('/api/product', productRouter)

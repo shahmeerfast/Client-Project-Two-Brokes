@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Seller from '../models/Seller.js';
+import Admin from '../models/Admin.js';
 
 dotenv.config();
 
@@ -60,7 +61,7 @@ const formatPhoneNumber = (phone) => {
 };
 
 // Send Email OTP
-export const sendEmailOTP = async (req, res) => {
+const sendEmailOTP = async (req, res) => {
   try {
     const { email } = req.body;
     const otp = generateOTP();
@@ -126,7 +127,7 @@ export const sendEmailOTP = async (req, res) => {
 };
 
 // Send Phone OTP
-export const sendPhoneOTP = async (req, res) => {
+const sendPhoneOTP = async (req, res) => {
   try {
     const { phone } = req.body;
     const otp = generateOTP();
@@ -215,7 +216,7 @@ export const sendPhoneOTP = async (req, res) => {
 };
 
 // Verify Email OTP
-export const verifyEmailOTP = async (req, res) => {
+const verifyEmailOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
     const storedData = otpStore.get(email);
@@ -260,7 +261,7 @@ export const verifyEmailOTP = async (req, res) => {
 };
 
 // Verify Phone OTP
-export const verifyPhoneOTP = async (req, res) => {
+const verifyPhoneOTP = async (req, res) => {
   try {
     const { phone, otp } = req.body;
     const storedData = otpStore.get(phone);
@@ -305,7 +306,7 @@ export const verifyPhoneOTP = async (req, res) => {
 };
 
 // Login handler
-export const login = async (req, res) => {
+const login = async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
@@ -353,7 +354,48 @@ export const login = async (req, res) => {
         }
       });
     } 
-    // For buyer login (you can add buyer model and logic here)
+    // For admin login
+    else if (role === 'admin') {
+      const admin = await Admin.findOne({ email });
+      
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, admin.password);
+      
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      // Generate JWT token
+      const token = jwt.sign(
+        { 
+          id: admin._id,
+          role: 'admin'
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: admin._id,
+          fullName: admin.fullName,
+          email: admin.email,
+          role: 'admin'
+        }
+      });
+    }
     else {
       return res.status(400).json({
         success: false,
@@ -368,4 +410,237 @@ export const login = async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+};
+
+// Admin registration
+const registerAdmin = async (req, res) => {
+    try {
+        const { fullName, email, password } = req.body;
+
+        // Check if email already exists
+        const existingAdmin = await Admin.findOne({ email });
+        if (existingAdmin) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email already registered'
+            });
+        }
+
+        // Check if this is the first admin
+        const adminCount = await Admin.countDocuments();
+        const isFirstAdmin = adminCount === 0;
+
+        // If not first admin, check if request is from an existing admin
+        if (!isFirstAdmin && (!req.user || req.user.role !== 'admin')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only existing admins can create new admin accounts'
+            });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Create new admin
+        const admin = new Admin({
+            fullName,
+            email,
+            password: hashedPassword,
+            role: 'admin'
+        });
+
+        await admin.save();
+
+        res.status(201).json({
+            success: true,
+            message: isFirstAdmin ? 'First admin registered successfully' : 'Admin registered successfully'
+        });
+    } catch (error) {
+        console.error('Admin Registration Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Registration failed',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Admin login
+const adminLogin = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Find admin by email
+        const admin = await Admin.findOne({ email });
+        if (!admin) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid email or password'
+            });
+        }
+
+        // Verify password
+        const isPasswordValid = await bcrypt.compare(password, admin.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid email or password'
+            });
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { 
+                id: admin._id,
+                role: 'admin'
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '30d' }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Login successful',
+            token,
+            user: {
+                id: admin._id,
+                fullName: admin.fullName,
+                email: admin.email,
+                role: 'admin'
+            }
+        });
+    } catch (error) {
+        console.error('Admin Login Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Login failed',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Request password reset for seller
+const requestPasswordReset = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        // Find seller by email
+        const seller = await Seller.findOne({ email });
+        if (!seller) {
+            return res.status(404).json({
+                success: false,
+                message: 'No account found with this email'
+            });
+        }
+
+        // Generate reset token
+        const resetToken = jwt.sign(
+            { id: seller._id },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        // Store reset token and expiry in seller document
+        seller.resetPasswordToken = resetToken;
+        seller.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+        await seller.save();
+
+        // Ensure frontend URL is properly formatted
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetLink = new URL('/reset-password', baseUrl).toString() + `?token=${resetToken}`;
+        
+        try {
+            await transporter.sendMail({
+                from: `"E-Commerce Support" <${process.env.EMAIL_USER}>`,
+                to: email,
+                subject: 'Password Reset Request',
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #333;">Password Reset Request</h2>
+                        <p>You requested to reset your password. Click the link below to reset it:</p>
+                        <p><a href="${resetLink}" style="color: #4CAF50; text-decoration: none; padding: 10px 20px; background-color: #f8f9fa; border: 1px solid #4CAF50; border-radius: 5px; display: inline-block; margin: 10px 0;">Reset Password</a></p>
+                        <p>Or copy and paste this URL into your browser:</p>
+                        <p style="word-break: break-all; color: #666;">${resetLink}</p>
+                        <p>This link is valid for 1 hour.</p>
+                        <p style="color: #666; font-size: 12px;">If you didn't request this, please ignore this email.</p>
+                    </div>
+                `
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Password reset instructions sent to your email'
+            });
+        } catch (emailError) {
+            console.error('Email sending error:', emailError);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to send reset email'
+            });
+        }
+    } catch (error) {
+        console.error('Password Reset Request Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process reset request',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Reset password with token
+const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        // Verify token and find seller
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const seller = await Seller.findOne({
+            _id: decoded.id,
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: Date.now() }
+        });
+
+        if (!seller) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid or expired reset token'
+            });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // Update password and clear reset token fields
+        seller.password = hashedPassword;
+        seller.resetPasswordToken = undefined;
+        seller.resetPasswordExpires = undefined;
+        await seller.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successful'
+        });
+    } catch (error) {
+        console.error('Password Reset Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reset password',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+export {
+    sendEmailOTP,
+    sendPhoneOTP,
+    verifyEmailOTP,
+    verifyPhoneOTP,
+    login,
+    registerAdmin,
+    adminLogin,
+    requestPasswordReset,
+    resetPassword
 }; 

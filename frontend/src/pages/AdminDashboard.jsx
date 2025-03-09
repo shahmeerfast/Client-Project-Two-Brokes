@@ -1,275 +1,229 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from '../config/axios';
 import { toast } from 'react-toastify';
+import { useShopContext } from '../context/ShopContext';
 
 const AdminDashboard = () => {
-  const [pendingProducts, setPendingProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProducts, setSelectedProducts] = useState(new Set());
-  const [filterCondition, setFilterCondition] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    approved: 0,
-    rejected: 0
-  });
-
-  useEffect(() => {
-    fetchPendingProducts();
-  }, []);
-
-  const fetchPendingProducts = async () => {
-    try {
-      const response = await axios.get('/api/product/admin/pending', {
-        headers: { token: localStorage.getItem('token') }
-      });
-      setPendingProducts(response.data.products);
-      
-      // Calculate statistics
-      const stats = response.data.products.reduce((acc, product) => {
-        acc.total++;
-        acc[product.approvalStatus]++;
-        return acc;
-      }, { total: 0, pending: 0, approved: 0, rejected: 0 });
-      
-      setStats(stats);
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Error fetching pending products');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleApproval = async (productId, status) => {
-    try {
-      const data = {
-        status,
-        rejectionReason: status === 'rejected' ? rejectionReason : undefined
-      };
-
-      await axios.put(`/api/product/admin/product/${productId}/status`, data, {
-        headers: { token: localStorage.getItem('token') }
-      });
-
-      toast.success(`Product ${status} successfully`);
-      fetchPendingProducts();
-      setSelectedProduct(null);
-      setRejectionReason('');
-      setSelectedProducts(new Set());
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Error updating product status');
-    }
-  };
-
-  const handleBulkAction = async (status) => {
-    try {
-      const promises = Array.from(selectedProducts).map(productId =>
-        axios.put(`/api/product/admin/product/${productId}/status`,
-          {
-            status,
-            rejectionReason: status === 'rejected' ? rejectionReason : undefined
-          },
-          {
-            headers: { token: localStorage.getItem('token') }
-          }
-        )
-      );
-
-      await Promise.all(promises);
-      toast.success(`${selectedProducts.size} products ${status} successfully`);
-      fetchPendingProducts();
-      setSelectedProducts(new Set());
-      setRejectionReason('');
-    } catch (error) {
-      toast.error('Error performing bulk action');
-    }
-  };
-
-  const toggleProductSelection = (productId) => {
-    const newSelected = new Set(selectedProducts);
-    if (newSelected.has(productId)) {
-      newSelected.delete(productId);
-    } else {
-      newSelected.add(productId);
-    }
-    setSelectedProducts(newSelected);
-  };
-
-  const filteredProducts = pendingProducts
-    .filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          product.description.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCondition = filterCondition === 'all' || product.condition === filterCondition;
-      return matchesSearch && matchesCondition;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
-      if (sortBy === 'oldest') return new Date(a.createdAt) - new Date(b.createdAt);
-      if (sortBy === 'priceHigh') return b.price - a.price;
-      if (sortBy === 'priceLow') return a.price - b.price;
-      return 0;
+    const navigate = useNavigate();
+    const { user, token } = useShopContext();
+    const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState('pending');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [stats, setStats] = useState({
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0
     });
+    const [imageError, setImageError] = useState({});
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black"></div>
-      </div>
+    // Check if user is admin
+    useEffect(() => {
+        if (!token || !user || user.role !== 'admin') {
+            toast.error('Access denied. Admin only area.');
+            navigate('/login');
+        }
+    }, [token, user, navigate]);
+
+    // Fetch products
+    useEffect(() => {
+        fetchProducts();
+    }, [filter]);
+
+    const fetchProducts = async () => {
+        try {
+            setLoading(true);
+            const response = await axios.get(`/api/product/admin/${filter}`, {
+                headers: { token: localStorage.getItem('token') }
+            });
+            
+            setProducts(response.data.products);
+            
+            // Calculate statistics
+            const stats = response.data.products.reduce((acc, product) => {
+                acc.total++;
+                acc[product.approvalStatus]++;
+                return acc;
+            }, { total: 0, pending: 0, approved: 0, rejected: 0 });
+            
+            setStats(stats);
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            toast.error('Failed to fetch products');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleApproveProduct = async (productId) => {
+        try {
+            await axios.put(`/api/product/admin/product/${productId}/status`, 
+                { status: 'approved' },
+                { headers: { token: localStorage.getItem('token') }}
+            );
+            toast.success('Product approved successfully');
+            fetchProducts();
+        } catch (error) {
+            console.error('Error approving product:', error);
+            toast.error('Failed to approve product');
+        }
+    };
+
+    const handleRejectProduct = async (productId, reason) => {
+        try {
+            await axios.put(`/api/product/admin/product/${productId}/status`,
+                { 
+                    status: 'rejected',
+                    rejectionReason: reason
+                },
+                { headers: { token: localStorage.getItem('token') }}
+            );
+            toast.success('Product rejected successfully');
+            fetchProducts();
+        } catch (error) {
+            console.error('Error rejecting product:', error);
+            toast.error('Failed to reject product');
+        }
+    };
+
+    const handleImageError = (productId) => {
+        setImageError(prev => ({
+            ...prev,
+            [productId]: true
+        }));
+    };
+
+    const getImageUrl = (product) => {
+        if (!product.images || !product.images.length || imageError[product._id]) {
+            return 'https://via.placeholder.com/300x200?text=No+Image';
+        }
+        
+        const imageUrl = product.images[0];
+        if (!imageUrl || imageUrl.startsWith('data:;base64,') || !imageUrl.startsWith('http')) {
+            return 'https://via.placeholder.com/300x200?text=Invalid+Image';
+        }
+        
+        return imageUrl;
+    };
+
+    const filteredProducts = products.filter(product => 
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }
 
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Admin Dashboard - Product Approval</h1>
-
-      {/* Statistics */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        {Object.entries(stats).map(([key, value]) => (
-          <div key={key} className="bg-white p-4 rounded-lg shadow-sm">
-            <h3 className="text-gray-500 capitalize">{key}</h3>
-            <p className="text-2xl font-bold">{value}</p>
-          </div>
-        ))}
-      </div>
-      
-      {/* Search and Filters */}
-      <div className="flex flex-wrap gap-4 mb-6">
-        <input
-          type="text"
-          placeholder="Search products..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-1 p-2 border rounded-lg"
-        />
-        <select
-          value={filterCondition}
-          onChange={(e) => setFilterCondition(e.target.value)}
-          className="p-2 border rounded-lg"
-        >
-          <option value="all">All Conditions</option>
-          <option value="new">New</option>
-          <option value="used">Used</option>
-        </select>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="p-2 border rounded-lg"
-        >
-          <option value="newest">Newest First</option>
-          <option value="oldest">Oldest First</option>
-          <option value="priceHigh">Price High to Low</option>
-          <option value="priceLow">Price Low to High</option>
-        </select>
-      </div>
-
-      {/* Bulk Actions */}
-      {selectedProducts.size > 0 && (
-        <div className="bg-gray-100 p-4 rounded-lg mb-6 flex items-center gap-4">
-          <span className="text-sm">{selectedProducts.size} products selected</span>
-          <button
-            onClick={() => handleBulkAction('approved')}
-            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-          >
-            Approve Selected
-          </button>
-          <button
-            onClick={() => handleBulkAction('rejected')}
-            className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-          >
-            Reject Selected
-          </button>
-          <button
-            onClick={() => setSelectedProducts(new Set())}
-            className="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400"
-          >
-            Clear Selection
-          </button>
-        </div>
-      )}
-      
-      {filteredProducts.length === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-gray-600">No pending products to review</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProducts.map((product) => (
-            <div key={product._id} className="border rounded-lg p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <input
-                  type="checkbox"
-                  checked={selectedProducts.has(product._id)}
-                  onChange={() => toggleProductSelection(product._id)}
-                  className="h-5 w-5 rounded border-gray-300"
-                />
-                <div className="aspect-w-16 aspect-h-9 flex-1">
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="object-cover rounded-lg w-full h-48"
-                  />
-                </div>
-              </div>
-              <h3 className="text-xl font-semibold mb-2">{product.name}</h3>
-              <p className="text-gray-600 mb-2">{product.description}</p>
-              <p className="text-lg font-bold mb-2">${product.price}</p>
-              <p className="text-sm text-gray-500 mb-2">
-                Condition: {product.condition}
-              </p>
-              <p className="text-sm text-gray-500 mb-4">
-                Seller: {product.seller.fullName}
-              </p>
-
-              {selectedProduct === product._id ? (
-                <div className="space-y-4">
-                  <textarea
-                    className="w-full p-2 border rounded"
-                    placeholder="Reason for rejection (optional)"
-                    value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
-                  />
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => handleApproval(product._id, 'approved')}
-                      className="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleApproval(product._id, 'rejected')}
-                      className="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600"
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedProduct(null);
-                        setRejectionReason('');
-                      }}
-                      className="flex-1 bg-gray-300 text-gray-700 py-2 rounded hover:bg-gray-400"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setSelectedProduct(product._id)}
-                  className="w-full bg-black text-white py-2 rounded hover:bg-gray-800"
-                >
-                  Review
-                </button>
-              )}
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center min-h-screen">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black"></div>
             </div>
-          ))}
+        );
+    }
+
+    return (
+        <div className="container mx-auto px-4 py-8">
+            <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
+
+            {/* Statistics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {Object.entries(stats).map(([key, value]) => (
+                    <div key={key} className="bg-white p-4 rounded-lg shadow-sm">
+                        <h3 className="text-gray-500 capitalize">{key}</h3>
+                        <p className="text-2xl font-bold">{value}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-4 mb-6">
+                <input
+                    type="text"
+                    placeholder="Search products..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="flex-1 p-2 border rounded-lg"
+                />
+                <select
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    className="p-2 border rounded-lg"
+                >
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="all">All Products</option>
+                </select>
+            </div>
+
+            {/* Products Grid */}
+            {filteredProducts.length === 0 ? (
+                <div className="text-center py-8">
+                    <p className="text-gray-600">No products found</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredProducts.map((product) => (
+                        <div key={product._id} className="border rounded-lg p-4 shadow-sm">
+                            <div className="aspect-w-16 aspect-h-9 mb-4">
+                                <img
+                                    src={getImageUrl(product)}
+                                    alt={product.name}
+                                    className="object-cover rounded-lg w-full h-48"
+                                    onError={() => handleImageError(product._id)}
+                                />
+                            </div>
+                            <h3 className="text-xl font-semibold mb-2">{product.name}</h3>
+                            <p className="text-gray-600 mb-2">{product.description}</p>
+                            <p className="text-lg font-bold mb-2">${product.price}</p>
+                            
+                            <div className="flex justify-between items-center mb-4">
+                                <span className="text-sm text-gray-500">
+                                    Category: {product.category}
+                                </span>
+                                <span className={`px-3 py-1 rounded-full text-sm ${
+                                    product.approvalStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                    product.approvalStatus === 'approved' ? 'bg-green-100 text-green-800' :
+                                    'bg-red-100 text-red-800'
+                                }`}>
+                                    {product.approvalStatus}
+                                </span>
+                            </div>
+
+                            {product.approvalStatus === 'pending' && (
+                                <div className="flex space-x-2">
+                                    <button
+                                        onClick={() => handleApproveProduct(product._id)}
+                                        className="flex-1 bg-green-500 text-white py-2 rounded hover:bg-green-600"
+                                    >
+                                        Approve
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const reason = window.prompt('Enter rejection reason:');
+                                            if (reason) handleRejectProduct(product._id, reason);
+                                        }}
+                                        className="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600"
+                                    >
+                                        Reject
+                                    </button>
+                                </div>
+                            )}
+
+                            {product.approvalStatus === 'rejected' && product.rejectionReason && (
+                                <div className="mt-4 p-3 bg-red-50 rounded-lg">
+                                    <p className="text-sm text-red-700">
+                                        <span className="font-semibold">Rejection Reason:</span>{' '}
+                                        {product.rejectionReason}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default AdminDashboard; 

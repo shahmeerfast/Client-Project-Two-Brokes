@@ -19,9 +19,12 @@ import Profile from './pages/Profile'
 import AddProduct from './pages/AddProduct'
 import SellerDashboard from './pages/SellerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import AdminRegister from './pages/AdminRegister'
 import ProtectedRoute from './components/ProtectedRoute'
 import Messages from './pages/Messages'
 import SellerRegister from './pages/SellerRegister'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 
 const App = () => {
   return (
@@ -36,51 +39,19 @@ const App = () => {
         <Route path='/contact' element={<Contact />} />
         <Route path='/product/:productId' element={<Product />} />
         <Route path='/seller/register' element={<SellerRegister />} />
-        <Route 
-          path='/cart' 
-          element={
-            <ProtectedRoute>
-              <Cart />
-            </ProtectedRoute>
-          } 
-        />
+        <Route path='/admin/register' element={<AdminRegister />} />
+        <Route path='/cart' element={<ProtectedRoute><Cart /></ProtectedRoute>} />
         <Route path='/login' element={<Login />} />
         <Route path='/place-order' element={<PlaceOrder />} />
         <Route path='/orders' element={<Orders />} />
         <Route path='/verify' element={<Verify />} />
         <Route path='/profile' element={<Profile />} />
-        <Route 
-          path='/add-product' 
-          element={
-            <ProtectedRoute requireSeller={true}>
-              <AddProduct />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path='/seller/dashboard' 
-          element={
-            <ProtectedRoute requireSeller={true}>
-              <SellerDashboard />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path='/admin/dashboard' 
-          element={
-            <ProtectedRoute role="admin">
-              <AdminDashboard />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path='/messages' 
-          element={
-            <ProtectedRoute>
-              <Messages />
-            </ProtectedRoute>
-          } 
-        />
+        <Route path='/add-product' element={<ProtectedRoute requireSeller={true}><AddProduct /></ProtectedRoute>} />
+        <Route path='/seller/dashboard' element={<ProtectedRoute requireSeller={true}><SellerDashboard /></ProtectedRoute>} />
+        <Route path='/admin/dashboard' element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
+        <Route path='/messages' element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+        <Route path='/forgot-password' element={<ForgotPassword />} />
+        <Route path='/reset-password' element={<ResetPassword />} />
       </Routes>
       <Footer />
     </div>

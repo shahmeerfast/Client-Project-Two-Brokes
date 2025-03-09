@@ -61,6 +61,8 @@ const sellerSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
   isVerified: {
     type: Boolean,
     default: false

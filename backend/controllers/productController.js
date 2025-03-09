@@ -363,6 +363,34 @@ const deleteSellerProduct = async (req, res) => {
   }
 };
 
+// Get products for admin by status
+const getAdminProducts = async (req, res) => {
+  try {
+    const { status } = req.params;
+    let query = {};
+    
+    // If status is specified and not 'all', add it to the query
+    if (status && status !== 'all') {
+      query.approvalStatus = status;
+    }
+
+    const products = await Product.find(query)
+      .populate('seller', 'fullName email')
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      products
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching products',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 export {
     listProducts,
     addProduct,
@@ -374,5 +402,6 @@ export {
     updateProductStatus,
     getSellerProducts,
     updateSellerProduct,
-    deleteSellerProduct
+    deleteSellerProduct,
+    getAdminProducts
 }

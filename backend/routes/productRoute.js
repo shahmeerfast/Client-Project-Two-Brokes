@@ -1,5 +1,5 @@
 import express from 'express'
-import { listProducts, addProduct, removeProduct, singleProduct,updateProduct, getProducts, getPendingProducts, updateProductStatus, getSellerProducts, updateSellerProduct, deleteSellerProduct } from '../controllers/productController.js'
+import { listProducts, addProduct, removeProduct, singleProduct, updateProduct, getProducts, getPendingProducts, updateProductStatus, getSellerProducts, updateSellerProduct, deleteSellerProduct, getAdminProducts } from '../controllers/productController.js'
 import multer from 'multer'
 import { isAuthenticated, isAdmin, isSeller } from '../middleware/auth.js'
 
@@ -30,6 +30,7 @@ router.post('/seller/add', isAuthenticated, isSeller, upload.array('images', 4),
 
 // Admin routes
 router.get('/admin/pending', isAuthenticated, isAdmin, getPendingProducts)
+router.get('/admin/:status', isAuthenticated, isAdmin, getAdminProducts)
 router.put('/admin/product/:productId/status', isAuthenticated, isAdmin, updateProductStatus)
 router.delete('/admin/product/:productId', isAuthenticated, isAdmin, removeProduct)
 

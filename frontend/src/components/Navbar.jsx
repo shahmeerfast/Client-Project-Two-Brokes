@@ -58,7 +58,7 @@ const Navbar = () => {
         )}
         {shopUser && shopUser.role === 'admin' && (
           <NavLink to="/admin/dashboard" className="flex flex-col items-center gap-1">
-            Admin Dashboard
+            ADMIN DASHBOARD
           </NavLink>
         )}
 
