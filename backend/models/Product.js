@@ -14,21 +14,31 @@ const productSchema = new mongoose.Schema({
     required: true
   },
   images: [{
-    type: String,
-    required: true
+    type: String
   }],
   category: {
     type: String,
     required: true
   },
+  subCategory: {
+    type: String
+  },
+  sizes: {
+    type: [String],
+    default: ['S', 'M', 'L']
+  },
+  bestseller: {
+    type: Boolean,
+    default: false
+  },
   condition: {
     type: String,
     enum: ['new', 'used'],
-    required: true
+    default: 'new'
   },
   seller: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Seller',
+    ref: 'User',
     required: true
   },
   approvalStatus: {

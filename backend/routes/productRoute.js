@@ -1,5 +1,5 @@
 import express from 'express'
-import { listProducts, addProduct, removeProduct, singleProduct, updateProduct, getProducts, getPendingProducts, updateProductStatus, getSellerProducts, updateSellerProduct, deleteSellerProduct, getAdminProducts } from '../controllers/productController.js'
+import { listProducts, addProduct, removeProduct, singleProduct, updateProduct, getProducts, getPendingProducts, updateProductStatus, getSellerProducts, updateSellerProduct, deleteSellerProduct, getAdminProducts, getApprovedProducts } from '../controllers/productController.js'
 import multer from 'multer'
 import { isAuthenticated, isAdmin, isSeller } from '../middleware/auth.js'
 
@@ -21,6 +21,7 @@ const upload = multer({ storage: storage })
 // Public routes
 router.get('/list', getProducts) // Get all approved products
 router.get('/product/:id', singleProduct) // Get single product details
+router.get('/approved', getApprovedProducts)
 
 // Seller routes
 router.get('/seller/products', isAuthenticated, isSeller, getSellerProducts)
